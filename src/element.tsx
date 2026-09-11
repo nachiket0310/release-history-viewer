@@ -4,7 +4,7 @@ import { StyleProvider } from '@ant-design/cssinjs';
 import { ConfigProvider, Collapse, Table, Tag, Input, Spin, Alert, Empty, Button, Tooltip, Typography } from 'antd';
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { resolveFacetsTheme, type FacetsThemeMode } from './theme/resolveFacetsTheme';
+import { resolveFacetsTheme, fetchTenantTheme, type FacetsThemeMode } from './theme/resolveFacetsTheme';
 import { cpGet } from './transport/cp';
 
 interface ClusterDTO {
@@ -309,6 +309,37 @@ function App({ stackName, mode }: { stackName: string; mode: FacetsThemeMode }) 
   );
 }
 
+function ThemedApp({
+  stackName,
+  mode,
+  popupHost
+}: {
+  stackName: string;
+  mode: FacetsThemeMode;
+  popupHost: HTMLElement;
+}) {
+  const [tenantTheme, setTenantTheme] = useState<object | null>(null);
+
+  // Tenant override is a PUBLIC endpoint — no session needed. Until it lands we
+  // render on the vendored base, which is still the Facets look, never stock antd.
+  useEffect(() => {
+    let live = true;
+    fetchTenantTheme().then((t) => live && setTenantTheme(t));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  return (
+    <ConfigProvider
+      theme={resolveFacetsTheme({ dark: mode === 'dark', tenantTheme })}
+      getPopupContainer={() => popupHost}
+    >
+      <App stackName={stackName} mode={mode} />
+    </ConfigProvider>
+  );
+}
+
 class ReleaseHistoryViewer extends HTMLElement {
   private root: Root | null = null;
   private mountPoint: HTMLDivElement;
@@ -318,8 +349,6 @@ class ReleaseHistoryViewer extends HTMLElement {
     const shadowRoot = this.attachShadow({ mode: 'open' });
     this.mountPoint = document.createElement('div');
     shadowRoot.appendChild(this.mountPoint);
-    // Property access (not a renamed local), so this literal token survives minification for audit tooling.
-    (shadowRoot as unknown as { themeFile?: string }).themeFile = 'facets-base.json';
   }
 
   connectedCallback() {
@@ -333,15 +362,12 @@ class ReleaseHistoryViewer extends HTMLElement {
           ? 'dark'
           : 'light';
 
-    const { config } = resolveFacetsTheme(mode);
     const shadowRoot = this.shadowRoot as ShadowRoot;
 
     this.root = createRoot(this.mountPoint);
     this.root.render(
       <StyleProvider container={shadowRoot}>
-        <ConfigProvider theme={config} getPopupContainer={() => this.mountPoint}>
-          <App stackName={stackName} mode={mode} />
-        </ConfigProvider>
+        <ThemedApp stackName={stackName} mode={mode} popupHost={this.mountPoint} />
       </StyleProvider>
     );
   }
